@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>QuakeSense — Live Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Bebas+Neue&family=Inter:wght@300;400;600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:        #020408;
+    --panel:     #080d14;
+    --border:    #0f2030;
+    --normal:    #00e5ff;
+    --warning:   #ffb300;
+    --quake:     #ff1744;
+    --text:      #c8d8e8;
+    --dim:       #3a5060;
+    --glow-n:    0 0 18px #00e5ff55;
+    --glow-w:    0 0 18px #ffb30066;
+    --glow-q:    0 0 28px #ff174488;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── scanline overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,229,255,0.015) 2px,
+      rgba(0,229,255,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  /* ── header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 36px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(90deg, #020408 0%, #050e18 100%);
+    position: sticky; top: 0; z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2rem;
+    letter-spacing: 4px;
+    color: var(--normal);
+    text-shadow: var(--glow-n);
+  }
+
+  .logo span { color: var(--quake); }
+
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--normal);
+    letter-spacing: 2px;
+  }
+
+  .pulse-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--normal);
+    box-shadow: var(--glow-n);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%,100% { opacity:1; transform:scale(1); }
+    50%      { opacity:0.3; transform:scale(0.7); }
+  }
+
+  /* ── main layout ── */
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
+
+  /* ── status hero ── */
+  .status-hero {
+    text-align: center;
+    padding: 40px 20px 32px;
+    margin-bottom: 32px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--panel);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .status-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 0%, #00e5ff08 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .status-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 4px;
+    color: var(--dim);
+    margin-bottom: 12px;
+    text-transform: uppercase;
+  }
+
+  .status-value {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(3rem, 8vw, 6rem);
+    letter-spacing: 8px;
+    line-height: 1;
+    transition: color 0.4s, text-shadow 0.4s;
+  }
+
+  .status-value.NORMAL     { color: var(--normal);  text-shadow: var(--glow-n); }
+  .status-value.WARNING    { color: var(--warning); text-shadow: var(--glow-w); animation: flicker-w 2s infinite; }
+  .status-value.EARTHQUAKE { color: var(--quake);   text-shadow: var(--glow-q); animation: shake 0.3s infinite; }
+
+  @keyframes flicker-w {
+    0%,100% { opacity:1; } 92% { opacity:1; } 93% { opacity:0.6; } 95% { opacity:1; }
+  }
+
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25%      { transform: translateX(-4px); }
+    75%      { transform: translateX(4px); }
+  }
+
+  .diff-reading {
+    margin-top: 16px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1.1rem;
+    color: var(--dim);
+  }
+
+  .diff-reading span {
+    color: var(--text);
+  }
+
+  /* ── stat cards ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 24px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+  }
+
+  .stat-card.total::after   { background: var(--normal); box-shadow: var(--glow-n); }
+  .stat-card.warn::after    { background: var(--warning); box-shadow: var(--glow-w); }
+  .stat-card.quake::after   { background: var(--quake);   box-shadow: var(--glow-q); }
+
+  .stat-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 3rem;
+    letter-spacing: 3px;
+    line-height: 1;
+  }
+
+  .stat-card.total .stat-num { color: var(--normal); }
+  .stat-card.warn  .stat-num { color: var(--warning); }
+  .stat-card.quake .stat-num { color: var(--quake); }
+
+  .stat-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 3px;
+    color: var(--dim);
+    margin-top: 6px;
+    text-transform: uppercase;
+  }
+
+  /* ── table ── */
+  .table-wrap {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .table-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .table-title {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    color: var(--dim);
+    text-transform: uppercase;
+  }
+
+  .refresh-info {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--dim);
+  }
+
+  #countdown { color: var(--normal); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  thead th {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 3px;
+    color: var(--dim);
+    text-align: left;
+    padding: 10px 24px;
+    border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid #0a1825;
+    transition: background 0.2s;
+    animation: rowIn 0.4s ease both;
+  }
+
+  tbody tr:hover { background: #0d1e2e; }
+
+  @keyframes rowIn {
+    from { opacity:0; transform: translateX(-10px); }
+    to   { opacity:1; transform: translateX(0); }
+  }
+
+  tbody td {
+    padding: 12px 24px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--text);
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 2px;
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    font-weight: 600;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .badge.WARNING    { background: #1a0f00; color: var(--warning); border: 1px solid #5a3a00; box-shadow: var(--glow-w); }
+  .badge.EARTHQUAKE { background: #1a0005; color: var(--quake);   border: 1px solid #6a0010; box-shadow: var(--glow-q); animation: flicker-q 1.5s infinite; }
+
+  @keyframes flicker-q {
+    0%,100% { opacity:1; } 85% { opacity:1; } 87% { opacity:0.4; } 90% { opacity:1; }
+  }
+
+  .diff-cell { color: var(--dim); }
+
+  /* ── footer ── */
+  footer {
+    text-align: center;
+    padding: 24px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+    color: #1a2a38;
+    text-transform: uppercase;
+  }
+
+  /* ── alert overlay ── */
+  #alertOverlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(255,23,68,0.08);
+    border: 3px solid var(--quake);
+    z-index: 500;
+    pointer-events: none;
+    animation: borderPulse 0.5s infinite;
+  }
+
+  @keyframes borderPulse {
+    0%,100% { border-color: #ff1744; }
+    50%      { border-color: transparent; }
+  }
+
+  /* ── responsive ── */
+  @media (max-width: 600px) {
+    .stats-grid { grid-template-columns: 1fr; }
+    header { padding: 14px 16px; }
+    main   { padding: 20px 12px; }
+    thead th, tbody td { padding: 10px 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="alertOverlay"></div>
+
+<header>
+  <div class="logo"> Seismo<span>Guard!</span></div>
+  <div class="live-badge">
+    <div class="pulse-dot"></div>
+    LIVE MONITOR
+  </div>
+</header>
+
+<main>
+
+  <!-- Status Hero -->
+  <div class="status-hero">
+    <div class="status-label">Current Status</div>
+    <div class="status-value NORMAL" id="currentStatus">—</div>
+    <div class="diff-reading">Filtered Diff: <span id="currentDiff">—</span></div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card total">
+      <div class="stat-num" id="statTotal">0</div>
+      <div class="stat-label">Total Events</div>
+    </div>
+    <div class="stat-card warn">
+      <div class="stat-num" id="statWarn">0</div>
+      <div class="stat-label">Warnings</div>
+    </div>
+    <div class="stat-card quake">
+      <div class="stat-num" id="statQuake">0</div>
+      <div class="stat-label">Earthquakes</div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <div class="table-header">
+      <div class="table-title">Recent Events</div>
+      <div class="refresh-info">Auto-refresh in <span id="countdown">3</span>s</div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Status</th>
+          <th>Diff Value</th>
+          <th>Recorded At</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr><td colspan="4" style="text-align:center;color:#1a3040;padding:40px;font-family:'Share Tech Mono',monospace;letter-spacing:2px;font-size:0.7rem;">LOADING DATA...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+
+<footer>QuakeSense AI — Real-Time Seismic Monitor — XAMPP + ESP32</footer>
+
+<script>
+  let countdown = 3;
+
+  function fetchData() {
+    fetch('api.php')
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { console.error(data.error); return; }
+
+        // ── stats ──
+        const s = data.stats;
+        document.getElementById('statTotal').textContent = s.total  || 0;
+        document.getElementById('statWarn').textContent  = s.warnings || 0;
+        document.getElementById('statQuake').textContent = s.earthquakes || 0;
+
+        // ── current status (latest record) ──
+        const latest  = data.records[0];
+        const statusEl = document.getElementById('currentStatus');
+        const overlay  = document.getElementById('alertOverlay');
+
+        if (latest) {
+          const st = latest.status;
+          statusEl.textContent  = st;
+          statusEl.className    = 'status-value ' + (st === 'EARTHQUAKE!' ? 'EARTHQUAKE' : st);
+          document.getElementById('currentDiff').textContent = parseFloat(latest.diff_value).toFixed(4);
+          overlay.style.display = (st === 'EARTHQUAKE!') ? 'block' : 'none';
+        }
+
+        // ── table ──
+        const tbody = document.getElementById('tableBody');
+        if (!data.records.length) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#1a3040;padding:40px;font-family:Share Tech Mono,monospace;letter-spacing:2px;font-size:0.7rem;">NO EVENTS YET</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.records.map((r, i) => {
+          const badgeClass = r.status === 'EARTHQUAKE!' ? 'EARTHQUAKE' : r.status;
+          const label      = r.status === 'EARTHQUAKE!' ? '⚠ EARTHQUAKE!' : r.status;
+          return `
+            <tr style="animation-delay:${i * 0.03}s">
+              <td style="color:#1a3a50">${r.id}</td>
+              <td><span class="badge ${badgeClass}">${label}</span></td>
+              <td class="diff-cell">${parseFloat(r.diff_value).toFixed(4)}</td>
+              <td style="color:#2a5070">${r.recorded_at}</td>
+            </tr>`;
+        }).join('');
+      })
+      .catch(e => console.error('Fetch error:', e));
+  }
+
+  // ── countdown timer ──
+  function startCountdown() {
+    countdown = 3;
+    const el = document.getElementById('countdown');
+    const interval = setInterval(() => {
+      countdown--;
+      el.textContent = countdown;
+      if (countdown <= 0) {
+        clearInterval(interval);
+        fetchData();
+        startCountdown();
+      }
+    }, 1000);
+  }
+
+  // initial load
+  fetchData();
+  startCountdown();
+</script>
+</body>
+</html>
